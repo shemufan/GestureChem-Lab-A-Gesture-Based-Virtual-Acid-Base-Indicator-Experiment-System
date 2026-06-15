@@ -5,36 +5,37 @@ import LabScene from './components/LabScene';
 import ResultPanel from './components/ResultPanel';
 import SafetyPanel from './components/SafetyPanel';
 import VirtualExperimentHand from './components/VirtualExperimentHand';
-import { buildObjects, buildZones, getGestureLabel } from './constants/labConfig.js';
-import { INTERACTION_CONFIG } from './constants/interactionConfig.js';
+import { getGestureLabel } from './constants/labConfig.js';
 import { EXPERIMENT_STEPS, INITIAL_STATE } from './experiment/experimentSteps';
 import { processAction } from './experiment/workflowEngine';
-import { createDragState, updateDrag } from './gesture/dragManager.js';
+import { createDrag3DState, updateDrag3D, resetDroppedObjectIfNeeded } from './gesture/drag3dManager.js';
 import { detectGesture, createGestureStabilizer } from './gesture/gestureController.js';
 import { initRecognizer, startLoop, stopLoop, closeRecognizer } from './gesture/gestureRecognizer.js';
-import { createPinchClickController, findObjectAtPoint } from './gesture/pinchClickController.js';
 import { useVirtualHand3D } from './hooks/useVirtualHand3D.js';
 
 function App() {
   const sceneRef = useRef(null);
-  const dragRef = useRef(createDragState(buildObjects()));
-  const zonesRef = useRef(buildZones());
   const pendingMouseDragRef = useRef(null);
   const mouseDraggingRef = useRef(false);
   const suppressNextClickRef = useRef(false);
-  const pinchClickRef = useRef(createPinchClickController());
-  const pointerWorldRef = useRef(null);
   const stabilizerRef = useRef(createGestureStabilizer({
     enterFrames: { pinch: 3, open: 2 },
     releaseFrames: 2,
   }));
   const mapVirtualHand = useVirtualHand3D();
 
+  // ── 3D drag state ──────────────────────────────────────────────────────
+  const drag3dRef = useRef(createDrag3DState());
+  const [drag3dState, setDrag3dState] = useState(drag3dRef.current);
+  const pointer3DRef = useRef({
+    hoveredObjectId: null,
+    dragPoint: null,
+  });
+
+  // ── Experiment state ───────────────────────────────────────────────────
   const [state, setState] = useState(INITIAL_STATE);
   const [showSafety, setShowSafety] = useState(false);
   const [showResultDelay, setShowResultDelay] = useState(false);
-  const [dragState, setDragState] = useState(dragRef.current);
-  const [zones, setZones] = useState(zonesRef.current);
   const [sceneSize, setSceneSize] = useState({ width: 1000, height: 650 });
   const [cameraReady, setCameraReady] = useState(false);
   const [modelReady, setModelReady] = useState(false);
@@ -44,6 +45,7 @@ function App() {
   const [sceneCursor, setSceneCursor] = useState({ x: 0, y: 0, z: 0 });
   const [interactionMode, setInteractionMode] = useState('mouse');
 
+  // ── Completion timer ───────────────────────────────────────────────────
   useEffect(() => {
     if (state.isCompleted) {
       const timer = setTimeout(() => setShowResultDelay(true), 3000);
@@ -52,25 +54,16 @@ function App() {
     return undefined;
   }, [state.isCompleted]);
 
-  const syncSceneLayout = useCallback((resetObjects = false) => {
+  // ── Scene layout sync ──────────────────────────────────────────────────
+  const syncSceneLayout = useCallback(() => {
     const rect = sceneRef.current?.getBoundingClientRect();
     if (!rect) return;
-
     setSceneSize({ width: rect.width, height: rect.height });
-    const nextZones = buildZones(rect);
-    zonesRef.current = nextZones;
-    setZones(nextZones);
-
-    if (resetObjects) {
-      const nextDrag = createDragState(buildObjects(rect));
-      dragRef.current = nextDrag;
-      setDragState(nextDrag);
-    }
   }, []);
 
   useEffect(() => {
-    const id = requestAnimationFrame(() => syncSceneLayout(true));
-    const handleResize = () => syncSceneLayout(true);
+    const id = requestAnimationFrame(() => syncSceneLayout());
+    const handleResize = () => syncSceneLayout();
     window.addEventListener('resize', handleResize);
     return () => {
       cancelAnimationFrame(id);
@@ -78,6 +71,7 @@ function App() {
     };
   }, [syncSceneLayout]);
 
+  // ── Drop handler ───────────────────────────────────────────────────────
   const onObjectDrop = useCallback((objectId, targetZone) => {
     setState((current) => {
       if (current.isCompleted) return current;
@@ -85,34 +79,33 @@ function App() {
       if (nextState.error) setShowSafety(true);
       return nextState;
     });
+
+    // Reset dropped object back to its resting position
+    setDrag3dState((current) => resetDroppedObjectIfNeeded(current, objectId));
   }, []);
 
-  const applyDrag = useCallback((cursor, gestureType) => {
-    const cursorWithWorld = {
-      ...cursor,
-      worldPosition: pointerWorldRef.current
-        ? [
-            pointerWorldRef.current.x,
-            pointerWorldRef.current.y + 0.55,
-            pointerWorldRef.current.z,
-          ]
-        : null,
-    };
+  // ── 3D drag apply ─────────────────────────────────────────────────────
+  const applyDrag3D = useCallback((gestureType) => {
+    setDrag3dState((current) => {
+      const next = updateDrag3D(current, {
+        gesture: gestureType,
+        hoveredObjectId: pointer3DRef.current.hoveredObjectId,
+        dragPoint: pointer3DRef.current.dragPoint,
+      });
 
-    const nextDrag = updateDrag(dragRef.current, cursorWithWorld, gestureType, {
-      zones: zonesRef.current,
-      reactionZoneIds: INTERACTION_CONFIG.reactionZoneIds,
-      snapZoneIds: INTERACTION_CONFIG.snapZoneIds,
+      if (next.dropEvent) {
+        // Persist via ref so we always have latest state
+        drag3dRef.current = next;
+        onObjectDrop(next.dropEvent.objectId, next.dropEvent.targetZone);
+        return { ...next, dropEvent: null };
+      }
+
+      drag3dRef.current = next;
+      return next;
     });
-
-    dragRef.current = nextDrag;
-    setDragState(nextDrag);
-
-    if (nextDrag.dropEvent) {
-      onObjectDrop(nextDrag.dropEvent.objectId, nextDrag.dropEvent.targetZone);
-    }
   }, [onObjectDrop]);
 
+  // ── Mouse click handler ────────────────────────────────────────────────
   const handleObjectClick = useCallback((objectId) => {
     if (suppressNextClickRef.current) {
       suppressNextClickRef.current = false;
@@ -121,40 +114,12 @@ function App() {
     onObjectDrop(objectId, getClickDropTarget(objectId));
   }, [onObjectDrop]);
 
-  const handlePointerWorldPoint = useCallback((worldPoint) => {
-    pointerWorldRef.current = worldPoint;
+  // ── 3D pointer callback from ScenePointerController ────────────────────
+  const handlePointer3D = useCallback((payload) => {
+    pointer3DRef.current = payload;
   }, []);
 
-  const applyGestureClick = useCallback((cursor, gestureType) => {
-    const hoveredObjectId = gestureType === 'none'
-      ? null
-      : findObjectAtPoint(cursor, dragRef.current.objects);
-    const nextDrag = {
-      ...dragRef.current,
-      holdingObjectId: null,
-      hoveredObjectId,
-      nearestObjectId: hoveredObjectId,
-      nearestDistance: null,
-      nearZoneId: null,
-      snapZoneId: null,
-      lastValidDropZoneId: null,
-      lastValidDropZoneAt: null,
-      isInsideGrabZone: Boolean(hoveredObjectId),
-      isInsideReactionZone: false,
-      dropReason: null,
-      dropEvent: null,
-      releaseStartedAt: null,
-    };
-
-    dragRef.current = nextDrag;
-    setDragState(nextDrag);
-
-    pinchClickRef.current.update(gestureType, {
-      resolveObjectId: () => hoveredObjectId,
-      onObjectClick: (objectId) => onObjectDrop(objectId, getClickDropTarget(objectId)),
-    });
-  }, [onObjectDrop]);
-
+  // ── Mouse pointer-down (starts drag tracking) ──────────────────────────
   const handleObjectPointerDown = useCallback((objectId, event) => {
     const rect = sceneRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -163,6 +128,7 @@ function App() {
     setInteractionMode('mouse');
   }, []);
 
+  // ── Mouse move / up for drag ───────────────────────────────────────────
   useEffect(() => {
     const handleMouseMove = (event) => {
       const pending = pendingMouseDragRef.current;
@@ -179,19 +145,19 @@ function App() {
       if (!mouseDraggingRef.current && moved > 6) {
         mouseDraggingRef.current = true;
         suppressNextClickRef.current = true;
-        applyDrag(pending.startPoint, 'pinch');
+        applyDrag3D('pinch');
       }
 
       if (mouseDraggingRef.current) {
         setSceneCursor(point);
-        applyDrag(point, 'pinch');
+        applyDrag3D('pinch');
       }
     };
 
     const handleMouseUp = () => {
       const pending = pendingMouseDragRef.current;
       if (pending && mouseDraggingRef.current) {
-        applyDrag(pending.lastPoint, 'open');
+        applyDrag3D('open');
       }
       pendingMouseDragRef.current = null;
       mouseDraggingRef.current = false;
@@ -203,8 +169,9 @@ function App() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [applyDrag]);
+  }, [applyDrag3D]);
 
+  // ── Camera / gesture pipeline ──────────────────────────────────────────
   const handleVideoReady = useCallback((videoEl) => {
     (async () => {
       try {
@@ -212,36 +179,31 @@ function App() {
         setModelReady(true);
 
         startLoop(videoEl, (result) => {
-  const primaryHand = result.hands.length > 0 ? result.hands[0] : null;
-  const nextRawGesture = detectGesture(primaryHand ? primaryHand.landmarks : null);
-  const stableGesture = stabilizerRef.current.update(nextRawGesture);
-  const virtualHand = mapVirtualHand(result, primaryHand, sceneRef.current);
+          const primaryHand = result.hands.length > 0 ? result.hands[0] : null;
+          const nextRawGesture = detectGesture(primaryHand ? primaryHand.landmarks : null);
+          const stableGesture = stabilizerRef.current.update(nextRawGesture);
+          const virtualHand = mapVirtualHand(result, primaryHand, sceneRef.current);
 
-  setHandDetected(result.detected);
-  setRawGesture(nextRawGesture);
-  setGesture(stableGesture);
-  setSceneCursor(virtualHand.cursorScene);
+          setHandDetected(result.detected);
+          setRawGesture(nextRawGesture);
+          setGesture(stableGesture);
+          setSceneCursor(virtualHand.cursorScene);
 
-  if (result.detected && nextRawGesture !== 'none') {
-    setInteractionMode('gesture');
-  }
+          if (result.detected && nextRawGesture !== 'none') {
+            setInteractionMode('gesture');
+          }
 
-  // 关键：手势模式下走拖拽，而不是点击
-  if (!mouseDraggingRef.current && result.detected) {
-    applyDrag(virtualHand.cursorScene, stableGesture);
-  }
-
-  // 没检测到手时，如果当前正在抓取，可以给一次释放信号
-  if (!result.detected && dragRef.current.holdingObjectId) {
-    applyDrag(dragRef.current.objects.find(o => o.id === dragRef.current.holdingObjectId), 'open');
-  }
-});
+          // Gesture mode: 3D drag pipeline
+          if (!mouseDraggingRef.current) {
+            applyDrag3D(result.detected ? stableGesture : 'open');
+          }
+        });
       } catch (error) {
         console.error('Failed to initialize MediaPipe:', error);
         setModelReady(false);
       }
     })();
-  }, [applyDrag, mapVirtualHand]);
+  }, [applyDrag3D, mapVirtualHand]);
 
   const handleStreamReady = useCallback(() => {
     setCameraReady(true);
@@ -258,8 +220,9 @@ function App() {
     };
   }, []);
 
+  // ── Current experiment step ────────────────────────────────────────────
   const currentStep = EXPERIMENT_STEPS[state.currentStepIndex];
-  const showDropZones = Boolean(dragState.holdingObjectId);
+  const draggingId = drag3dState.draggingObjectId;
 
   return (
     <div style={uiStyles.app}>
@@ -267,40 +230,21 @@ function App() {
         ref={sceneRef}
         currentStep={currentStep}
         beakerColor={state.beakerLiquidColor}
-        objects={dragState.objects}
+        drag3dState={drag3dState}
         sceneSize={sceneSize}
         sceneCursor={sceneCursor}
-        holdingObjectId={dragState.holdingObjectId}
-        hoveredObjectId={dragState.hoveredObjectId}
-        nearZoneId={dragState.nearZoneId}
+        onPointer3D={handlePointer3D}
         onObjectClick={handleObjectClick}
         onObjectPointerDown={handleObjectPointerDown}
-        onPointerWorldPoint={handlePointerWorldPoint}
       />
 
-      {showDropZones && zones.map((zone) => (
-        <div
-          key={zone.id}
-          style={{
-            ...uiStyles.dropZone,
-            left: zone.x - zone.width / 2,
-            top: zone.y - zone.height / 2,
-            width: zone.width,
-            height: zone.height,
-            borderColor: dragState.nearZoneId === zone.id ? '#2ecc71' : 'rgba(52, 152, 219, 0.55)',
-          }}
-        >
-          {zone.sceneLabel}
-        </div>
-      ))}
-
-      {(handDetected || dragState.holdingObjectId) && (
+      {(handDetected || draggingId) && (
         <VirtualExperimentHand
-          visible={handDetected || Boolean(dragState.holdingObjectId)}
+          visible={handDetected || Boolean(draggingId)}
           x={sceneCursor.x}
           y={sceneCursor.y}
           gesture={gesture}
-          holdingObjectId={dragState.holdingObjectId}
+          holdingObjectId={draggingId}
         />
       )}
 
@@ -411,33 +355,6 @@ const uiStyles = {
     color: '#334155',
     fontSize: '12px',
     minWidth: '150px',
-  },
-  cursor: {
-    position: 'absolute',
-    width: '22px',
-    height: '22px',
-    marginLeft: '-11px',
-    marginTop: '-11px',
-    borderRadius: '50%',
-    border: '2px solid #0f172a',
-    background: 'rgba(46, 204, 113, 0.45)',
-    boxShadow: '0 0 0 8px rgba(46, 204, 113, 0.12)',
-    pointerEvents: 'none',
-    zIndex: 5,
-  },
-  dropZone: {
-    position: 'absolute',
-    zIndex: 4,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: '2px dashed',
-    borderRadius: '14px',
-    color: '#1e293b',
-    background: 'rgba(255, 255, 255, 0.22)',
-    fontSize: '13px',
-    fontWeight: 700,
-    pointerEvents: 'none',
   },
 };
 

@@ -2,19 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { isMostlyBlackFrame, listVideoDevices, startCamera } from '../gesture/camera.js';
 import { shouldDrawPreviewFrame } from './cameraPreview.js';
 
-const CAMERA_STARTING_TEXT = '\u6b63\u5728\u542f\u52a8\u6444\u50cf\u5934...';
-const CAMERA_START_FAILED_TEXT = '\u6444\u50cf\u5934\u542f\u52a8\u5931\u8d25\uff0c\u53ef\u7ee7\u7eed\u4f7f\u7528\u9f20\u6807\u64cd\u4f5c\u3002';
-const BLACK_FRAME_TEXT = '\u6444\u50cf\u5934\u5df2\u8fde\u63a5\uff0c\u4f46\u9884\u89c8\u6301\u7eed\u9ed1\u5c4f\u3002\u8bf7\u5207\u6362\u6444\u50cf\u5934\u3001\u5173\u95ed\u9690\u79c1\u906e\u6321\uff0c\u6216\u9000\u51fa\u5360\u7528\u6444\u50cf\u5934\u7684\u8f6f\u4ef6\u3002';
-const TRACK_LOST_TEXT = '\u6444\u50cf\u5934\u89c6\u9891\u6d41\u5df2\u4e2d\u65ad\u3002\u8bf7\u5237\u65b0\u9875\u9762\u6216\u91cd\u65b0\u9009\u62e9\u6444\u50cf\u5934\u3002';
-const DEVICE_LABEL_TEXT = '\u6444\u50cf\u5934';
-const DEFAULT_DEVICE_TEXT = '\u9ed8\u8ba4\u6444\u50cf\u5934';
+const CAMERA_STARTING_TEXT = '正在启动摄像头...';
+const CAMERA_START_FAILED_TEXT = '摄像头启动失败，可继续使用鼠标操作。';
+const BLACK_FRAME_TEXT = '摄像头已连接，但预览持续黑屏。请切换摄像头、关闭隐私遮挡，或退出占用摄像头的软件。';
+const TRACK_LOST_TEXT = '摄像头视频流已中断。请刷新页面或重新选择摄像头。';
+const DEVICE_LABEL_TEXT = '摄像头';
+const DEFAULT_DEVICE_TEXT = '默认摄像头';
 
 export default function CameraView({ onStreamReady, onVideoReady, onError }) {
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const monitorRef = useRef(null);
-  const previewStopRef = useRef(null);
   const callbacksRef = useRef({ onStreamReady, onVideoReady, onError });
   const [status, setStatus] = useState('loading');
   const [errorMessage, setErrorMessage] = useState('');
@@ -27,8 +25,7 @@ export default function CameraView({ onStreamReady, onVideoReady, onError }) {
 
   useEffect(() => {
     const video = videoRef.current;
-    const previewCanvas = canvasRef.current;
-    if (!video || !previewCanvas) return undefined;
+    if (!video) return undefined;
 
     let cancelled = false;
     setStatus('loading');
@@ -39,13 +36,8 @@ export default function CameraView({ onStreamReady, onVideoReady, onError }) {
         clearInterval(monitorRef.current);
         monitorRef.current = null;
       }
-      if (previewStopRef.current !== null) {
-        previewStopRef.current();
-        previewStopRef.current = null;
-      }
       streamRef.current?.stop();
       streamRef.current = null;
-      clearPreview(previewCanvas);
     };
 
     (async () => {
@@ -63,7 +55,6 @@ export default function CameraView({ onStreamReady, onVideoReady, onError }) {
         }
 
         streamRef.current = { stream, stop };
-        previewStopRef.current = startCanvasPreview(video, previewCanvas);
         setStatus('live');
         callbacksRef.current.onStreamReady?.(stream);
         callbacksRef.current.onVideoReady?.(video);
@@ -111,19 +102,17 @@ export default function CameraView({ onStreamReady, onVideoReady, onError }) {
   return (
     <div style={styles.wrapper}>
       <div style={styles.shell}>
-        <canvas
-          ref={canvasRef}
-          style={{
-            ...styles.previewCanvas,
-            opacity: status === 'live' ? 1 : 0.35,
-          }}
-        />
+        {/* Video element is the direct visual preview — no canvas drawImage needed.
+            This avoids the Chrome/GPU-delegate drawImage→black bug entirely. */}
         <video
           ref={videoRef}
           autoPlay
           muted
           playsInline
-          style={styles.hiddenVideo}
+          style={{
+            ...styles.previewVideo,
+            opacity: status === 'live' ? 1 : 0.35,
+          }}
         />
         {showOverlay && (
           <div style={styles.status}>
@@ -167,21 +156,16 @@ const styles = {
     background: '#111827',
     boxShadow: '0 12px 32px rgba(15, 23, 42, 0.2)',
   },
-  previewCanvas: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-    transform: 'scaleX(-1)',
-  },
-  hiddenVideo: {
+  previewVideo: {
     position: 'absolute',
     top: 0,
     left: 0,
     width: '100%',
     height: '100%',
-    opacity: 0.01,
-    pointerEvents: 'none',
-    zIndex: -1,
+    objectFit: 'cover',
+    transform: 'scaleX(-1)',
+    border: '2px solid #2ecc71',
+    boxSizing: 'border-box',
   },
   status: {
     position: 'absolute',
@@ -215,57 +199,6 @@ const styles = {
     fontSize: '12px',
   },
 };
-
-function startCanvasPreview(video, canvas) {
-  const context = canvas.getContext('2d');
-  let frameId = null;
-  let stopped = false;
-  let frameCount = 0;
-
-  const drawFrame = () => {
-    if (stopped) return;
-    if (shouldDrawPreviewFrame(video) && context) {
-      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-      }
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      frameCount += 1;
-      if (frameCount === 1 || frameCount % 90 === 0) {
-        console.log(
-          `[CameraView] preview frame #${frameCount} drawn — video: ${video.videoWidth}×${video.videoHeight}, canvas: ${canvas.width}×${canvas.height}`,
-        );
-      }
-    } else if (context && frameCount === 0) {
-      // Video not ready yet — draw a fallback color so we can confirm canvas is alive
-      if (canvas.width === 0 || canvas.height === 0) {
-        canvas.width = 320;
-        canvas.height = 200;
-      }
-      context.fillStyle = '#1a1a2e';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = '#ffffff';
-      context.font = '14px sans-serif';
-      context.textAlign = 'center';
-      context.fillText('等待视频帧...', canvas.width / 2, canvas.height / 2);
-    }
-    frameId = requestAnimationFrame(drawFrame);
-  };
-
-  frameId = requestAnimationFrame(drawFrame);
-  return () => {
-    stopped = true;
-    if (frameId !== null) {
-      cancelAnimationFrame(frameId);
-    }
-  };
-}
-
-function clearPreview(canvas) {
-  const context = canvas.getContext('2d');
-  if (!context) return;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-}
 
 function startVideoHealthMonitor(video, stream, handlers) {
   const canvas = document.createElement('canvas');
@@ -305,8 +238,8 @@ function startVideoHealthMonitor(video, stream, handlers) {
         reportedBlack = false;
         handlers.onRecovered();
       }
-    } catch (error) {
-      // A transient drawImage failure should not tear down the camera.
+    } catch (_error) {
+      // transient drawImage failure — ignore
     }
   }, 450);
 }

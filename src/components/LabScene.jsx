@@ -1,9 +1,9 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { ContactShadows, Environment, Float, OrbitControls, PerspectiveCamera, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { getSceneObjectTransform, WASTE_SINK_WORLD } from '../sceneObjectLayout.js';
-import ScenePointerProjector from './ScenePointerProjector';
+import { STATIC_OBJECT_WORLD, WASTE_SINK_WORLD } from '../scene/worldLayout';
+import ScenePointerController from './ScenePointerController';
 
 const glassMaterialProps = {
   transparent: true,
@@ -17,16 +17,40 @@ const glassMaterialProps = {
   side: THREE.DoubleSide,
 };
 
-function TestTube({ transform, liquidColor, label, onClick, onPointerDown, highlighted, isHeld }) {
+// ── TestTube ──────────────────────────────────────────────────────────────
+
+function TestTube({
+  id,
+  position,
+  rotation,
+  scale,
+  liquidColor,
+  label,
+  onClick,
+  onPointerDown,
+  highlighted,
+  isHeld,
+  registerHitbox,
+}) {
   const tubeBody = (
     <group
-      position={transform.position}
-      rotation={transform.rotation}
-      scale={transform.scale}
+      position={position}
+      rotation={rotation}
+      scale={scale}
       onClick={onClick}
       onPointerDown={onPointerDown}
       style={{ cursor: 'pointer' }}
     >
+      {/* Invisible hitbox for raycaster */}
+      <mesh
+        ref={registerHitbox}
+        visible={false}
+        userData={{ objectId: id, draggable: true }}
+      >
+        <boxGeometry args={[0.3, 1.15, 0.3]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+
       <mesh position={[0, 0.4, 0]}>
         <cylinderGeometry args={[0.08, 0.08, 0.8, 32, 1, true]} />
         <meshPhysicalMaterial {...glassMaterialProps} color="#ffffff" />
@@ -66,9 +90,11 @@ function TestTube({ transform, liquidColor, label, onClick, onPointerDown, highl
   );
 }
 
-function TestTubeRack({ position }) {
+// ── TestTubeRack ──────────────────────────────────────────────────────────
+
+function TestTubeRack({ position: rackPos }) {
   return (
-    <group position={position}>
+    <group position={rackPos}>
       <mesh position={[0, 0.05, 0]} receiveShadow>
         <boxGeometry args={[1.5, 0.1, 0.6]} />
         <meshStandardMaterial color="#f8f9fa" roughness={0.3} />
@@ -87,16 +113,36 @@ function TestTubeRack({ position }) {
   );
 }
 
-function Goggles({ transform, onClick, onPointerDown, highlighted }) {
+// ── Goggles ───────────────────────────────────────────────────────────────
+
+function Goggles({
+  position,
+  rotation,
+  scale,
+  onClick,
+  onPointerDown,
+  highlighted,
+  registerHitbox,
+}) {
   return (
     <group
-      position={transform.position}
-      rotation={transform.rotation}
-      scale={transform.scale}
+      position={position}
+      rotation={rotation}
+      scale={scale}
       onClick={onClick}
       onPointerDown={onPointerDown}
       style={{ cursor: 'pointer' }}
     >
+      {/* Invisible hitbox for raycaster */}
+      <mesh
+        ref={registerHitbox}
+        visible={false}
+        userData={{ objectId: 'goggles', draggable: true }}
+      >
+        <boxGeometry args={[0.8, 0.5, 0.25]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+
       <mesh position={[0, 0.1, 0]} castShadow>
         <boxGeometry args={[0.6, 0.25, 0.1]} />
         <meshPhysicalMaterial
@@ -122,6 +168,8 @@ function Goggles({ transform, onClick, onPointerDown, highlighted }) {
     </group>
   );
 }
+
+// ── Beaker ────────────────────────────────────────────────────────────────
 
 function Beaker({ transform, liquidColor, onClick, onPointerDown, highlighted }) {
   const isEmpty = liquidColor === '#f0f0f0' || liquidColor === '#ffffff';
@@ -171,6 +219,8 @@ function Beaker({ transform, liquidColor, onClick, onPointerDown, highlighted })
   );
 }
 
+// ── WasteSink ─────────────────────────────────────────────────────────────
+
 function WasteSink({ highlighted }) {
   return (
     <group position={WASTE_SINK_WORLD.position} rotation={WASTE_SINK_WORLD.rotation} scale={WASTE_SINK_WORLD.scale}>
@@ -203,37 +253,51 @@ function WasteSink({ highlighted }) {
   );
 }
 
+// ── Object renderer config ────────────────────────────────────────────────
+
 const OBJECT_RENDERERS = {
-  acid: { label: 'HCl', liquidColor: '#3498db', legacyId: 'acid_bottle' },
-  indicator: { label: '酚酞', liquidColor: '#8e44ad', legacyId: 'indicator_bottle' },
-  base: { label: 'NaOH', liquidColor: '#e74c3c', legacyId: 'base_bottle' },
+  acid: { label: 'HCl', liquidColor: '#3498db' },
+  indicator: { label: '酚酞', liquidColor: '#8e44ad' },
+  base: { label: 'NaOH', liquidColor: '#e74c3c' },
 };
+
+// ── LabScene ──────────────────────────────────────────────────────────────
 
 const LabScene = forwardRef(({
   beakerColor,
-  objects = [],
+  drag3dState,
   sceneSize,
   sceneCursor,
-  holdingObjectId,
-  hoveredObjectId,
-  nearZoneId,
+  onPointer3D,
   onObjectClick,
   onObjectPointerDown,
-  onPointerWorldPoint,
 }, ref) => {
-  const objectMap = new Map(objects.map((object) => [object.id, object]));
+  const hitboxesRef = useRef([]);
+  const registerHitbox = useCallback((mesh) => {
+    if (!mesh) return;
+    if (!hitboxesRef.current.includes(mesh)) {
+      hitboxesRef.current.push(mesh);
+    }
+  }, []);
 
-  const handlePointerDown = (objectId) => (event) => {
+  const d = drag3dState || {};
+  const positions = d.objectWorldPositions || {};
+  const draggingId = d.draggingObjectId || null;
+  const hoveredId = d.hoveredObjectId || null;
+  const nearZoneId = d.nearZoneId || null;
+
+  const makePointerDown = (objectId) => (event) => {
     event.stopPropagation();
     onObjectPointerDown?.(objectId, event.nativeEvent || event);
   };
 
-  const transformFor = (id) => getSceneObjectTransform(
-    objectMap.get(id) || { id, kind: id === 'beaker' ? 'beaker' : 'testTube' },
-    sceneSize,
-    { holdingObjectId },
-  );
-  const isHighlighted = (id) => holdingObjectId === id || hoveredObjectId === id;
+  const beakerTransform = {
+    position: STATIC_OBJECT_WORLD.beaker.position,
+    rotation: STATIC_OBJECT_WORLD.beaker.rotation,
+    scale: STATIC_OBJECT_WORLD.beaker.scale,
+  };
+
+  const gogglesPos = positions.goggles || STATIC_OBJECT_WORLD.goggles.position;
 
   return (
     <div ref={ref} style={{ width: '100%', height: '100%', background: 'radial-gradient(circle, #ffffff 0%, #d7dada 100%)' }}>
@@ -243,40 +307,47 @@ const LabScene = forwardRef(({
         <ambientLight intensity={0.5} />
         <spotLight position={[5, 10, 5]} angle={0.2} penumbra={1} intensity={1.5} castShadow />
 
-        <ScenePointerProjector
+        <ScenePointerController
           cursor={sceneCursor}
           sceneSize={sceneSize}
-          enabled={Boolean(holdingObjectId)}
-          onWorldPoint={onPointerWorldPoint}
+          hitboxesRef={hitboxesRef}
+          onPointer3D={onPointer3D}
         />
 
         <Beaker
-          transform={transformFor('beaker')}
+          transform={beakerTransform}
           liquidColor={beakerColor}
-          highlighted={isHighlighted('beaker') || nearZoneId === 'beaker_zone'}
-          onClick={() => onObjectClick('beaker')}
-          onPointerDown={handlePointerDown('beaker')}
+          highlighted={nearZoneId === 'beaker_zone' || hoveredId === 'beaker'}
+          onClick={() => onObjectClick?.('beaker')}
+          onPointerDown={makePointerDown('beaker')}
         />
 
         <TestTubeRack position={[-2.5, 0, 0]} />
         {Object.entries(OBJECT_RENDERERS).map(([id, config]) => (
           <TestTube
             key={id}
-            transform={transformFor(id)}
+            id={id}
+            position={positions[id] || STATIC_OBJECT_WORLD[id]?.position || [0, 0, 0]}
+            rotation={[0, 0, 0]}
+            scale={1}
             liquidColor={config.liquidColor}
             label={config.label}
-            highlighted={isHighlighted(id)}
-            isHeld={holdingObjectId === id}
-            onClick={() => onObjectClick(id)}
-            onPointerDown={handlePointerDown(id)}
+            highlighted={draggingId === id || hoveredId === id}
+            isHeld={draggingId === id}
+            registerHitbox={registerHitbox}
+            onClick={() => onObjectClick?.(id)}
+            onPointerDown={makePointerDown(id)}
           />
         ))}
 
         <Goggles
-          transform={transformFor('goggles')}
-          highlighted={isHighlighted('goggles') || nearZoneId === 'face_area'}
-          onClick={() => onObjectClick('goggles')}
-          onPointerDown={handlePointerDown('goggles')}
+          position={gogglesPos}
+          rotation={[0, 0, 0]}
+          scale={1}
+          highlighted={draggingId === 'goggles' || hoveredId === 'goggles' || nearZoneId === 'face_area'}
+          registerHitbox={registerHitbox}
+          onClick={() => onObjectClick?.('goggles')}
+          onPointerDown={makePointerDown('goggles')}
         />
 
         <WasteSink highlighted={nearZoneId === 'waste_bin'} />

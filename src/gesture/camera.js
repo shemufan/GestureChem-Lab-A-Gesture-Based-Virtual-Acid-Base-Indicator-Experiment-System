@@ -69,7 +69,12 @@ export function stopCamera(stream, videoElement) {
   if (stream) {
     stream.getTracks().forEach((track) => track.stop());
   }
-  if (videoElement) {
+  // Only clear the video element if it is still using the stream being stopped.
+  // In React StrictMode (mount→unmount→remount), a second effect may have
+  // already assigned a NEW stream to videoElement.srcObject. If we blindly
+  // null it here, we kill the live preview and leave a permanent black screen
+  // with status 'live'.
+  if (videoElement && videoElement.srcObject === stream) {
     videoElement.pause?.();
     videoElement.srcObject = null;
     videoElement.removeAttribute('src');

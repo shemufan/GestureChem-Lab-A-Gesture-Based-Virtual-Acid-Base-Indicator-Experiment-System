@@ -2,7 +2,7 @@
  * Gesture Controller — gesture classification, stabilisation & smoothing.
  *
  * Exports:
- *   detectGesture(landmarks, options) → 'open' | 'fist' | 'pinch' | 'none'
+ *   detectGesture(landmarks, options) → 'open' | 'pinch' | 'none'
  *   createGestureStabilizer(options)   → { update(raw) → stable }
  *   createCursorSmoother(options)      → { update(pos) → smoothed }
  */
@@ -31,26 +31,22 @@ const FINGER_JOINTS = [
 /**
  * Classify the current hand gesture from MediaPipe landmarks.
  *
- * Fist is detected first from curled fingers, then pinch from thumb-index
- * distance. Fist wins over pinch so a closed hand is treated as holding.
+ * Only two gesture classes: pinch (thumb-index close) and open.
+ * Fist detection is intentionally removed — pinch is the sole interaction gesture.
+ * MediaPipe z is intentionally excluded from the distance calculation.
  *
  * @param {Array<{x:number, y:number, z:number}>} landmarks
  * @param {Object} [options]
  * @param {number} [options.pinchThreshold=0.05]
- * @returns {'open' | 'fist' | 'pinch' | 'none'}
+ * @returns {'open' | 'pinch' | 'none'}
  */
 export function detectGesture(landmarks, options = {}) {
   const {
     pinchThreshold = DEFAULT_PINCH_THRESHOLD,
-    fistCurlThreshold = 0.75,
   } = options;
 
   if (!landmarks || !Array.isArray(landmarks) || landmarks.length < 21) {
     return 'none';
-  }
-
-  if (getFistConfidence(landmarks) >= fistCurlThreshold) {
-    return 'fist';
   }
 
   const thumbTip = landmarks[4];
@@ -58,8 +54,7 @@ export function detectGesture(landmarks, options = {}) {
 
   const dx = thumbTip.x - indexTip.x;
   const dy = thumbTip.y - indexTip.y;
-  const dz = (thumbTip.z || 0) - (indexTip.z || 0);
-  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  const distance = Math.sqrt(dx * dx + dy * dy);
 
   return distance < pinchThreshold ? 'pinch' : 'open';
 }
@@ -104,8 +99,7 @@ export function getPinchConfidence(landmarks, options = {}) {
   const indexTip = landmarks[8];
   const dx = thumbTip.x - indexTip.x;
   const dy = thumbTip.y - indexTip.y;
-  const dz = (thumbTip.z || 0) - (indexTip.z || 0);
-  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  const distance = Math.sqrt(dx * dx + dy * dy);
   return Math.max(0, Math.min(1, 1 - distance / pinchThreshold));
 }
 
