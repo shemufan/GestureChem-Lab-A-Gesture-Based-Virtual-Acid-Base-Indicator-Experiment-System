@@ -236,6 +236,7 @@ function App() {
         onPointer3D={handlePointer3D}
         onObjectClick={handleObjectClick}
         onObjectPointerDown={handleObjectPointerDown}
+        hasGoggles={state.hasGoggles}
       />
 
       {(handDetected || draggingId) && (

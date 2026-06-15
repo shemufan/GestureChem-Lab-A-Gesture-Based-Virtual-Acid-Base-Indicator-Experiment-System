@@ -32,6 +32,12 @@ export const WASTE_SINK_WORLD = {
   scale: 1,
 };
 
+export const FACE_AREA_WORLD = {
+  position: [0, 0.6, -1.8],
+  rotation: [0, 0, 0],
+  scale: 1,
+};
+
 export const DRAG_CONFIG = {
   dragPlaneY: 0.35,
   heldObjectY: 0.85,

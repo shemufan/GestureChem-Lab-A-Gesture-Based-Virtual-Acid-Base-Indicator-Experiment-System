@@ -3,8 +3,8 @@ import { WASTE_SINK_WORLD } from './worldLayout';
 export const WORLD_DROP_ZONES = {
   face_area: {
     id: 'face_area',
-    center: [2.5, 0.8, 1],
-    radius: 0.85,
+    center: [0, 0.8, -1.8],
+    radius: 0.95,
   },
   beaker_zone: {
     id: 'beaker_zone',

@@ -2,7 +2,7 @@ import React, { forwardRef, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { ContactShadows, Environment, Float, OrbitControls, PerspectiveCamera, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { STATIC_OBJECT_WORLD, WASTE_SINK_WORLD } from '../scene/worldLayout';
+import { STATIC_OBJECT_WORLD, WASTE_SINK_WORLD, FACE_AREA_WORLD } from '../scene/worldLayout';
 import ScenePointerController from './ScenePointerController';
 
 const glassMaterialProps = {
@@ -253,6 +253,57 @@ function WasteSink({ highlighted }) {
   );
 }
 
+// ── FaceArea (visual drop zone, NOT draggable) ─────────────────────────
+
+function FaceArea({ highlighted, hasGoggles }) {
+  return (
+    <group position={FACE_AREA_WORLD.position}>
+      {/* Outer ring — drop zone indicator */}
+      <mesh position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.65, 0.04, 16, 64]} />
+        <meshStandardMaterial
+          color={highlighted ? '#2ecc71' : '#3498db'}
+          transparent
+          opacity={highlighted ? 0.7 : 0.35}
+          roughness={0.3}
+          emissive={highlighted ? '#2ecc71' : '#000000'}
+          emissiveIntensity={highlighted ? 0.5 : 0}
+        />
+      </mesh>
+      {/* Inner dashed-feel ring */}
+      <mesh position={[0, 0.02, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.45, 0.015, 16, 48]} />
+        <meshBasicMaterial
+          color={highlighted ? '#2ecc71' : '#3498db'}
+          transparent
+          opacity={highlighted ? 0.55 : 0.2}
+        />
+      </mesh>
+      {/* Label */}
+      <Text position={[0, 1.05, 0]} fontSize={0.18} color={highlighted ? '#2ecc71' : '#2c3e50'} fontWeight="bold">
+        护目镜佩戴区
+      </Text>
+
+      {/* Worn goggles indicator when already equipped */}
+      {hasGoggles && (
+        <mesh position={[0, 0.12, 0]} castShadow>
+          <boxGeometry args={[0.55, 0.22, 0.08]} />
+          <meshPhysicalMaterial
+            color="#3498db"
+            transparent
+            opacity={0.5}
+            transmission={0.6}
+            roughness={0}
+            thickness={0.15}
+            emissive="#d8f3ff"
+            emissiveIntensity={0.3}
+          />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
 // ── Object renderer config ────────────────────────────────────────────────
 
 const OBJECT_RENDERERS = {
@@ -271,6 +322,7 @@ const LabScene = forwardRef(({
   onPointer3D,
   onObjectClick,
   onObjectPointerDown,
+  hasGoggles,
 }, ref) => {
   const hitboxesRef = useRef([]);
   const registerHitbox = useCallback((mesh) => {
@@ -340,14 +392,21 @@ const LabScene = forwardRef(({
           />
         ))}
 
-        <Goggles
-          position={gogglesPos}
-          rotation={[0, 0, 0]}
-          scale={1}
-          highlighted={draggingId === 'goggles' || hoveredId === 'goggles' || nearZoneId === 'face_area'}
-          registerHitbox={registerHitbox}
-          onClick={() => onObjectClick?.('goggles')}
-          onPointerDown={makePointerDown('goggles')}
+        {!hasGoggles && (
+          <Goggles
+            position={gogglesPos}
+            rotation={[0, 0, 0]}
+            scale={1}
+            highlighted={draggingId === 'goggles' || hoveredId === 'goggles' || nearZoneId === 'face_area'}
+            registerHitbox={registerHitbox}
+            onClick={() => onObjectClick?.('goggles')}
+            onPointerDown={makePointerDown('goggles')}
+          />
+        )}
+
+        <FaceArea
+          highlighted={nearZoneId === 'face_area'}
+          hasGoggles={hasGoggles}
         />
 
         <WasteSink highlighted={nearZoneId === 'waste_bin'} />
