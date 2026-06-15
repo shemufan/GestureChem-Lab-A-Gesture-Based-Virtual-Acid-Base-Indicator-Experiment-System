@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { getClickDropTarget, toScenePoint } from './appInteraction.js';
+import { toScenePoint } from './appInteraction.js';
 import CameraView from './components/CameraView';
 import LabScene from './components/LabScene';
 import ResultPanel from './components/ResultPanel';
@@ -34,6 +34,8 @@ function App() {
 
   // ── Experiment state ───────────────────────────────────────────────────
   const [state, setState] = useState(INITIAL_STATE);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const [showSafety, setShowSafety] = useState(false);
   const [showResultDelay, setShowResultDelay] = useState(false);
   const [sceneSize, setSceneSize] = useState({ width: 1000, height: 650 });
@@ -106,12 +108,25 @@ function App() {
   }, [onObjectDrop]);
 
   // ── Mouse click handler ────────────────────────────────────────────────
+  // Clicks are intentionally suppressed for most action types.
+  // Only OBSERVE steps (e.g. observing beaker colour) still respond to a
+  // simple click. All other steps (EQUIP / POUR / DROP / DISPOSE) must go
+  // through the 3D drag pipeline.
   const handleObjectClick = useCallback((objectId) => {
     if (suppressNextClickRef.current) {
       suppressNextClickRef.current = false;
       return;
     }
-    onObjectDrop(objectId, getClickDropTarget(objectId));
+
+    const currentState = stateRef.current;
+    const currentStep = EXPERIMENT_STEPS[currentState.currentStepIndex];
+    if (
+      currentStep?.actionType === 'OBSERVE'
+      && objectId === currentStep.targetObject
+    ) {
+      onObjectDrop(objectId, currentStep.targetZone);
+    }
+    // All other clicks are intentionally ignored — drag only.
   }, [onObjectDrop]);
 
   // ── 3D pointer callback from ScenePointerController ────────────────────

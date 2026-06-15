@@ -14,7 +14,7 @@ export const WORLD_DROP_ZONES = {
   waste_bin: {
     id: 'waste_bin',
     center: WASTE_SINK_WORLD.position,
-    radius: 0.8,
+    radius: 1.05,
   },
 };
 

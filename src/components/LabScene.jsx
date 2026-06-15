@@ -171,18 +171,38 @@ function Goggles({
 
 // ── Beaker ────────────────────────────────────────────────────────────────
 
-function Beaker({ transform, liquidColor, onClick, onPointerDown, highlighted }) {
+function Beaker({
+  id,
+  position,
+  rotation,
+  scale,
+  liquidColor,
+  onClick,
+  onPointerDown,
+  highlighted,
+  registerHitbox,
+}) {
   const isEmpty = liquidColor === '#f0f0f0' || liquidColor === '#ffffff';
 
   return (
     <group
-      position={transform.position}
-      rotation={transform.rotation}
-      scale={transform.scale}
+      position={position}
+      rotation={rotation}
+      scale={scale}
       onClick={onClick}
       onPointerDown={onPointerDown}
       style={{ cursor: 'pointer' }}
     >
+      {/* Invisible hitbox for raycaster — beaker is draggable for DISPOSE step */}
+      <mesh
+        ref={registerHitbox}
+        visible={false}
+        userData={{ objectId: id, draggable: true }}
+      >
+        <cylinderGeometry args={[0.75, 0.75, 1.7, 32]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+
       <mesh position={[0, 0.75, 0]}>
         <cylinderGeometry args={[0.6, 0.6, 1.5, 32, 1, true]} />
         <meshStandardMaterial
@@ -324,11 +344,14 @@ const LabScene = forwardRef(({
   onObjectPointerDown,
   hasGoggles,
 }, ref) => {
-  const hitboxesRef = useRef([]);
-  const registerHitbox = useCallback((mesh) => {
-    if (!mesh) return;
-    if (!hitboxesRef.current.includes(mesh)) {
-      hitboxesRef.current.push(mesh);
+  const hitboxesRef = useRef(new Map());
+  const registerHitbox = useCallback((objectId) => (mesh) => {
+    if (mesh) {
+      mesh.userData.objectId = objectId;
+      mesh.userData.draggable = true;
+      hitboxesRef.current.set(objectId, mesh);
+    } else {
+      hitboxesRef.current.delete(objectId);
     }
   }, []);
 
@@ -343,12 +366,7 @@ const LabScene = forwardRef(({
     onObjectPointerDown?.(objectId, event.nativeEvent || event);
   };
 
-  const beakerTransform = {
-    position: STATIC_OBJECT_WORLD.beaker.position,
-    rotation: STATIC_OBJECT_WORLD.beaker.rotation,
-    scale: STATIC_OBJECT_WORLD.beaker.scale,
-  };
-
+  const beakerPos = positions.beaker || STATIC_OBJECT_WORLD.beaker.position;
   const gogglesPos = positions.goggles || STATIC_OBJECT_WORLD.goggles.position;
 
   return (
@@ -367,9 +385,13 @@ const LabScene = forwardRef(({
         />
 
         <Beaker
-          transform={beakerTransform}
+          id="beaker"
+          position={beakerPos}
+          rotation={STATIC_OBJECT_WORLD.beaker.rotation}
+          scale={STATIC_OBJECT_WORLD.beaker.scale}
           liquidColor={beakerColor}
-          highlighted={nearZoneId === 'beaker_zone' || hoveredId === 'beaker'}
+          highlighted={draggingId === 'beaker' || hoveredId === 'beaker' || nearZoneId === 'beaker_zone'}
+          registerHitbox={registerHitbox('beaker')}
           onClick={() => onObjectClick?.('beaker')}
           onPointerDown={makePointerDown('beaker')}
         />
@@ -386,7 +408,7 @@ const LabScene = forwardRef(({
             label={config.label}
             highlighted={draggingId === id || hoveredId === id}
             isHeld={draggingId === id}
-            registerHitbox={registerHitbox}
+            registerHitbox={registerHitbox(id)}
             onClick={() => onObjectClick?.(id)}
             onPointerDown={makePointerDown(id)}
           />
@@ -398,7 +420,7 @@ const LabScene = forwardRef(({
             rotation={[0, 0, 0]}
             scale={1}
             highlighted={draggingId === 'goggles' || hoveredId === 'goggles' || nearZoneId === 'face_area'}
-            registerHitbox={registerHitbox}
+            registerHitbox={registerHitbox('goggles')}
             onClick={() => onObjectClick?.('goggles')}
             onPointerDown={makePointerDown('goggles')}
           />

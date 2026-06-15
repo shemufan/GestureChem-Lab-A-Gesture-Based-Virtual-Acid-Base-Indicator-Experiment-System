@@ -29,13 +29,14 @@ export default function ScenePointerController({
 
     raycaster.setFromCamera(ndc, camera);
 
-    const hitboxObjects = hitboxesRef.current || [];
-    const hits = raycaster.intersectObjects(hitboxObjects, true);
+    const currentHitboxes = hitboxesRef.current;
+    const hitboxObjects = currentHitboxes instanceof Map
+      ? Array.from(currentHitboxes.values())
+      : currentHitboxes || [];
 
-    const hoveredObjectId =
-      hits[0]?.object?.userData?.objectId ||
-      hits[0]?.object?.parent?.userData?.objectId ||
-      null;
+    const hits = raycaster.intersectObjects(hitboxObjects, true);
+    const draggableHit = hits.find((hit) => hit.object?.userData?.draggable);
+    const hoveredObjectId = draggableHit?.object?.userData?.objectId || null;
 
     const planeHit = raycaster.ray.intersectPlane(dragPlane, intersection);
     const dragPoint = planeHit
