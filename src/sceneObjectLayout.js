@@ -25,7 +25,7 @@ export function scenePointToWorld(point, sceneRect = {}) {
 
   return [
     round3((normalizedX - 0.5) * WORLD_WIDTH),
-    round3(BASE_WORLD_Y + (1 - normalizedY) * 1.28 + z * 0.34),
+    round3(BASE_WORLD_Y + 0.85 + z * 0.12),
     round3((normalizedY - 0.5) * WORLD_DEPTH),
   ];
 }
@@ -45,7 +45,19 @@ export function getSceneObjectTransform(object, sceneRect, options = {}) {
     };
   }
 
+  if (object.worldPosition) {
+    return {
+      id: object.id,
+      kind: object.kind,
+      position: object.worldPosition,
+      rotation: object.kind === 'testTube' ? [0.18, 0, -0.34] : [0.06, 0, -0.08],
+      scale: 1.08,
+      isHeld: true,
+    };
+  }
+
   const position = scenePointToWorld(object, sceneRect);
+
   return {
     id: object.id,
     kind: object.kind,

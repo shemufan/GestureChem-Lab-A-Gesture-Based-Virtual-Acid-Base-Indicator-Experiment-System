@@ -113,8 +113,6 @@ export default function CameraView({ onStreamReady, onVideoReady, onError }) {
       <div style={styles.shell}>
         <canvas
           ref={canvasRef}
-          width="320"
-          height="200"
           style={{
             ...styles.previewCanvas,
             opacity: status === 'live' ? 1 : 0.35,
@@ -177,10 +175,11 @@ const styles = {
   },
   hiddenVideo: {
     position: 'absolute',
-    inset: 0,
+    top: 0,
+    left: 0,
     width: '100%',
     height: '100%',
-    opacity: 0.005,
+    opacity: 0.01,
     pointerEvents: 'none',
     zIndex: -1,
   },
@@ -221,6 +220,7 @@ function startCanvasPreview(video, canvas) {
   const context = canvas.getContext('2d');
   let frameId = null;
   let stopped = false;
+  let frameCount = 0;
 
   const drawFrame = () => {
     if (stopped) return;
@@ -230,6 +230,24 @@ function startCanvasPreview(video, canvas) {
         canvas.height = video.videoHeight;
       }
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      frameCount += 1;
+      if (frameCount === 1 || frameCount % 90 === 0) {
+        console.log(
+          `[CameraView] preview frame #${frameCount} drawn — video: ${video.videoWidth}×${video.videoHeight}, canvas: ${canvas.width}×${canvas.height}`,
+        );
+      }
+    } else if (context && frameCount === 0) {
+      // Video not ready yet — draw a fallback color so we can confirm canvas is alive
+      if (canvas.width === 0 || canvas.height === 0) {
+        canvas.width = 320;
+        canvas.height = 200;
+      }
+      context.fillStyle = '#1a1a2e';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = '#ffffff';
+      context.font = '14px sans-serif';
+      context.textAlign = 'center';
+      context.fillText('等待视频帧...', canvas.width / 2, canvas.height / 2);
     }
     frameId = requestAnimationFrame(drawFrame);
   };

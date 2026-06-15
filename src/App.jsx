@@ -23,6 +23,7 @@ function App() {
   const mouseDraggingRef = useRef(false);
   const suppressNextClickRef = useRef(false);
   const pinchClickRef = useRef(createPinchClickController());
+  const pointerWorldRef = useRef(null);
   const stabilizerRef = useRef(createGestureStabilizer({
     enterFrames: { pinch: 3, open: 2 },
     releaseFrames: 2,
@@ -87,11 +88,23 @@ function App() {
   }, []);
 
   const applyDrag = useCallback((cursor, gestureType) => {
-    const nextDrag = updateDrag(dragRef.current, cursor, gestureType, {
+    const cursorWithWorld = {
+      ...cursor,
+      worldPosition: pointerWorldRef.current
+        ? [
+            pointerWorldRef.current.x,
+            pointerWorldRef.current.y + 0.55,
+            pointerWorldRef.current.z,
+          ]
+        : null,
+    };
+
+    const nextDrag = updateDrag(dragRef.current, cursorWithWorld, gestureType, {
       zones: zonesRef.current,
       reactionZoneIds: INTERACTION_CONFIG.reactionZoneIds,
       snapZoneIds: INTERACTION_CONFIG.snapZoneIds,
     });
+
     dragRef.current = nextDrag;
     setDragState(nextDrag);
 
@@ -107,6 +120,10 @@ function App() {
     }
     onObjectDrop(objectId, getClickDropTarget(objectId));
   }, [onObjectDrop]);
+
+  const handlePointerWorldPoint = useCallback((worldPoint) => {
+    pointerWorldRef.current = worldPoint;
+  }, []);
 
   const applyGestureClick = useCallback((cursor, gestureType) => {
     const hoveredObjectId = gestureType === 'none'
@@ -195,29 +212,36 @@ function App() {
         setModelReady(true);
 
         startLoop(videoEl, (result) => {
-          const primaryHand = result.hands.length > 0 ? result.hands[0] : null;
-          const nextRawGesture = detectGesture(primaryHand ? primaryHand.landmarks : null);
-          const stableGesture = stabilizerRef.current.update(nextRawGesture);
-          const virtualHand = mapVirtualHand(result, primaryHand, sceneRef.current);
+  const primaryHand = result.hands.length > 0 ? result.hands[0] : null;
+  const nextRawGesture = detectGesture(primaryHand ? primaryHand.landmarks : null);
+  const stableGesture = stabilizerRef.current.update(nextRawGesture);
+  const virtualHand = mapVirtualHand(result, primaryHand, sceneRef.current);
 
-          if (!mouseDraggingRef.current) {
-            applyGestureClick(virtualHand.cursorScene, stableGesture);
-          }
+  setHandDetected(result.detected);
+  setRawGesture(nextRawGesture);
+  setGesture(stableGesture);
+  setSceneCursor(virtualHand.cursorScene);
 
-          setHandDetected(result.detected);
-          setRawGesture(nextRawGesture);
-          setGesture(stableGesture);
-          setSceneCursor(virtualHand.cursorScene);
-          if (result.detected && nextRawGesture !== 'none') {
-            setInteractionMode('gesture');
-          }
-        });
+  if (result.detected && nextRawGesture !== 'none') {
+    setInteractionMode('gesture');
+  }
+
+  // 关键：手势模式下走拖拽，而不是点击
+  if (!mouseDraggingRef.current && result.detected) {
+    applyDrag(virtualHand.cursorScene, stableGesture);
+  }
+
+  // 没检测到手时，如果当前正在抓取，可以给一次释放信号
+  if (!result.detected && dragRef.current.holdingObjectId) {
+    applyDrag(dragRef.current.objects.find(o => o.id === dragRef.current.holdingObjectId), 'open');
+  }
+});
       } catch (error) {
         console.error('Failed to initialize MediaPipe:', error);
         setModelReady(false);
       }
     })();
-  }, [applyGestureClick, mapVirtualHand]);
+  }, [applyDrag, mapVirtualHand]);
 
   const handleStreamReady = useCallback(() => {
     setCameraReady(true);
@@ -245,11 +269,13 @@ function App() {
         beakerColor={state.beakerLiquidColor}
         objects={dragState.objects}
         sceneSize={sceneSize}
+        sceneCursor={sceneCursor}
         holdingObjectId={dragState.holdingObjectId}
         hoveredObjectId={dragState.hoveredObjectId}
         nearZoneId={dragState.nearZoneId}
         onObjectClick={handleObjectClick}
         onObjectPointerDown={handleObjectPointerDown}
+        onPointerWorldPoint={handlePointerWorldPoint}
       />
 
       {showDropZones && zones.map((zone) => (

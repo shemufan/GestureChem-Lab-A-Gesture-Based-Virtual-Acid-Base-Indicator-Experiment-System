@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { ContactShadows, Environment, Float, OrbitControls, PerspectiveCamera, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { getSceneObjectTransform, WASTE_SINK_WORLD } from '../sceneObjectLayout.js';
+import ScenePointerProjector from './ScenePointerProjector';
 
 const glassMaterialProps = {
   transparent: true,
@@ -16,47 +17,51 @@ const glassMaterialProps = {
   side: THREE.DoubleSide,
 };
 
-function TestTube({ transform, liquidColor, label, onClick, onPointerDown, highlighted }) {
-  return (
+function TestTube({ transform, liquidColor, label, onClick, onPointerDown, highlighted, isHeld }) {
+  const tubeBody = (
+    <group
+      position={transform.position}
+      rotation={transform.rotation}
+      scale={transform.scale}
+      onClick={onClick}
+      onPointerDown={onPointerDown}
+      style={{ cursor: 'pointer' }}
+    >
+      <mesh position={[0, 0.4, 0]}>
+        <cylinderGeometry args={[0.08, 0.08, 0.8, 32, 1, true]} />
+        <meshPhysicalMaterial {...glassMaterialProps} color="#ffffff" />
+      </mesh>
+      <mesh position={[0, 0, 0]}>
+        <sphereGeometry args={[0.08, 32, 32, 0, Math.PI * 2, Math.PI / 2, Math.PI]} />
+        <meshPhysicalMaterial {...glassMaterialProps} color="#ffffff" />
+      </mesh>
+      <mesh position={[0, 0.25, 0]}>
+        <cylinderGeometry args={[0.075, 0.075, 0.5, 32]} />
+        <meshStandardMaterial
+          color={liquidColor}
+          transparent
+          opacity={0.8}
+          roughness={0.1}
+          metalness={0.2}
+          emissive={highlighted ? '#e8f7ff' : '#000000'}
+          emissiveIntensity={highlighted ? 0.22 : 0}
+        />
+      </mesh>
+      {highlighted && (
+        <mesh position={[0, 0.35, 0]}>
+          <cylinderGeometry args={[0.13, 0.13, 0.92, 32, 1, true]} />
+          <meshBasicMaterial color="#5dade2" transparent opacity={0.16} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+      <Text position={[0, 1.0, 0]} fontSize={0.12} color="#2c3e50" fontWeight="bold">
+        {label}
+      </Text>
+    </group>
+  );
+
+  return isHeld ? tubeBody : (
     <Float speed={2} rotationIntensity={0.3} floatIntensity={0.4}>
-      <group
-        position={transform.position}
-        rotation={transform.rotation}
-        scale={transform.scale}
-        onClick={onClick}
-        onPointerDown={onPointerDown}
-        style={{ cursor: 'pointer' }}
-      >
-        <mesh position={[0, 0.4, 0]}>
-          <cylinderGeometry args={[0.08, 0.08, 0.8, 32, 1, true]} />
-          <meshPhysicalMaterial {...glassMaterialProps} color="#ffffff" />
-        </mesh>
-        <mesh position={[0, 0, 0]}>
-          <sphereGeometry args={[0.08, 32, 32, 0, Math.PI * 2, Math.PI / 2, Math.PI]} />
-          <meshPhysicalMaterial {...glassMaterialProps} color="#ffffff" />
-        </mesh>
-        <mesh position={[0, 0.25, 0]}>
-          <cylinderGeometry args={[0.075, 0.075, 0.5, 32]} />
-          <meshStandardMaterial
-            color={liquidColor}
-            transparent
-            opacity={0.8}
-            roughness={0.1}
-            metalness={0.2}
-            emissive={highlighted ? '#e8f7ff' : '#000000'}
-            emissiveIntensity={highlighted ? 0.22 : 0}
-          />
-        </mesh>
-        {highlighted && (
-          <mesh position={[0, 0.35, 0]}>
-            <cylinderGeometry args={[0.13, 0.13, 0.92, 32, 1, true]} />
-            <meshBasicMaterial color="#5dade2" transparent opacity={0.16} side={THREE.DoubleSide} />
-          </mesh>
-        )}
-        <Text position={[0, 1.0, 0]} fontSize={0.12} color="#2c3e50" fontWeight="bold">
-          {label}
-        </Text>
-      </group>
+      {tubeBody}
     </Float>
   );
 }
@@ -208,11 +213,13 @@ const LabScene = forwardRef(({
   beakerColor,
   objects = [],
   sceneSize,
+  sceneCursor,
   holdingObjectId,
   hoveredObjectId,
   nearZoneId,
   onObjectClick,
   onObjectPointerDown,
+  onPointerWorldPoint,
 }, ref) => {
   const objectMap = new Map(objects.map((object) => [object.id, object]));
 
@@ -236,6 +243,13 @@ const LabScene = forwardRef(({
         <ambientLight intensity={0.5} />
         <spotLight position={[5, 10, 5]} angle={0.2} penumbra={1} intensity={1.5} castShadow />
 
+        <ScenePointerProjector
+          cursor={sceneCursor}
+          sceneSize={sceneSize}
+          enabled={Boolean(holdingObjectId)}
+          onWorldPoint={onPointerWorldPoint}
+        />
+
         <Beaker
           transform={transformFor('beaker')}
           liquidColor={beakerColor}
@@ -252,8 +266,9 @@ const LabScene = forwardRef(({
             liquidColor={config.liquidColor}
             label={config.label}
             highlighted={isHighlighted(id)}
-            onClick={() => onObjectClick(config.legacyId)}
-            onPointerDown={handlePointerDown(config.legacyId)}
+            isHeld={holdingObjectId === id}
+            onClick={() => onObjectClick(id)}
+            onPointerDown={handlePointerDown(id)}
           />
         ))}
 

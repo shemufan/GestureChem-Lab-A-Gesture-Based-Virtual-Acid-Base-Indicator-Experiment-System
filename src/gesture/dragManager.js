@@ -199,6 +199,7 @@ function moveHeldObject(objects, objectId, cursor, snapZone) {
           x: target.x,
           y: target.y,
           z: normalizeZ(cursor.z, object.z),
+          worldPosition: cursor.worldPosition || object.worldPosition || null,
           depthLayer: 'held',
         }
       : object,
@@ -330,6 +331,7 @@ function normalizeCursor(cursor) {
     x: cursor?.x || 0,
     y: cursor?.y || 0,
     z: normalizeZ(cursor?.z, 0.35),
+    worldPosition: cursor?.worldPosition || null,
   };
 }
 
