@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node src/appInteraction.test.js && node src/sceneObjectLayout.test.js && node src/components/cameraPreview.test.js && node src/gesture/camera.test.js && node src/gesture/gestureController.test.js && node src/gesture/pinchClickController.test.js && node src/gesture/dragManager.test.js && node src/gesture/inputAdapter.test.js && node src/experiment/workflowEngine.test.js && node src/contracts/interfaceContracts.test.js",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -12,6 +13,7 @@
     "three": "0.169.0",
     "@react-three/fiber": "8.17.10",
     "@react-three/drei": "9.114.0",
+    "@mediapipe/tasks-vision": "^0.10.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
