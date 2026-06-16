@@ -262,6 +262,8 @@ function App() {
   // ── Current experiment step ────────────────────────────────────────────
   const currentStep = EXPERIMENT_STEPS[state.currentStepIndex];
   const draggingId = drag3dState.draggingObjectId;
+  const nearZoneId = drag3dState.nearZoneId;
+  const releaseHint = getReleaseHint(draggingId, nearZoneId);
 
   return (
     <div style={uiStyles.app}>
@@ -295,6 +297,12 @@ function App() {
         isCompleted={state.isCompleted} 
       />
 
+      {releaseHint && (
+        <div style={uiStyles.releaseHint}>
+          {releaseHint}
+        </div>
+      )}
+
       {state.isCompleted && !showResultDelay && (
         <div style={uiStyles.successToast}>滴定与废液处理已完成！请观察最终记录...</div>
       )}
@@ -310,6 +318,7 @@ function App() {
           <span>摄像头：{cameraReady ? '已连接' : '未连接'}</span>
           <span>模型：{modelReady ? '已就绪' : '等待中'}</span>
           <span>手势：{getGestureLabel(gesture)} / {getGestureLabel(rawGesture)}</span>
+          <span>抓取：{draggingId ? getObjectDisplayName(draggingId) : '无'}</span>
         </div>
       </div>
 
@@ -329,6 +338,40 @@ function App() {
       )}
     </div>
   );
+}
+
+const OBJECT_DISPLAY_NAMES = {
+  goggles: '护目镜',
+  acid: 'HCl',
+  indicator: '酚酞',
+  base: 'NaOH',
+  beaker: '烧杯',
+};
+
+function getObjectDisplayName(objectId) {
+  return OBJECT_DISPLAY_NAMES[objectId] || objectId || '无';
+}
+
+function getReleaseHint(objectId, zoneId) {
+  if (!objectId || !zoneId) return null;
+
+  if (zoneId === 'beaker_zone') {
+    if (objectId === 'acid') return '松手以将 HCl 倒入烧杯';
+    if (objectId === 'indicator') return '松手以滴入酚酞';
+    if (objectId === 'base') return '松手以加入 NaOH';
+    if (objectId === 'beaker') return '松手以观察烧杯';
+    return '松手以放入烧杯区域';
+  }
+
+  if (zoneId === 'face_area') {
+    return '松手以佩戴护目镜';
+  }
+
+  if (zoneId === 'waste_bin') {
+    return '松手以倒入废液槽';
+  }
+
+  return null;
 }
 
 const uiStyles = {
@@ -388,6 +431,21 @@ const uiStyles = {
     background: 'rgba(255, 255, 255, 0.88)',
     border: '1px solid rgba(226, 232, 240, 0.9)',
     boxShadow: '0 14px 36px rgba(15, 23, 42, 0.14)',
+  },
+  releaseHint: {
+    position: 'absolute',
+    top: '112px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: 'rgba(46, 204, 113, 0.92)',
+    color: '#fff',
+    padding: '10px 22px',
+    borderRadius: '999px',
+    fontSize: '15px',
+    fontWeight: 700,
+    boxShadow: '0 12px 30px rgba(46, 204, 113, 0.28)',
+    pointerEvents: 'none',
+    zIndex: 20,
   },
   gestureMeta: {
     display: 'grid',
