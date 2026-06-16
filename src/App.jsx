@@ -10,7 +10,7 @@ import { getGestureLabel } from './constants/labConfig.js';
 import { EXPERIMENT_STEPS, INITIAL_STATE } from './experiment/experimentSteps';
 import { processAction } from './experiment/workflowEngine';
 import { createDrag3DState, updateDrag3D, resetDroppedObjectIfNeeded } from './gesture/drag3dManager.js';
-import { detectGesture, createGestureStabilizer } from './gesture/gestureController.js';
+import { detectGesture, createGestureStabilizer, createCursorSmoother } from './gesture/gestureController.js';
 import { initRecognizer, startLoop, stopLoop, closeRecognizer } from './gesture/gestureRecognizer.js';
 import { useVirtualHand3D } from './hooks/useVirtualHand3D.js';
 
@@ -21,9 +21,10 @@ function App() {
   const suppressNextClickRef = useRef(false);
   const lastSuccessTimeRef = useRef(0);
   const stabilizerRef = useRef(createGestureStabilizer({
-    enterFrames: { pinch: 3, open: 2 },
-    releaseFrames: 2,
+    enterFrames: { pinch: 3, open: 4 },
+    releaseFrames: 4,
   }));
+  const cursorSmootherRef = useRef(createCursorSmoother({ factor: 0.18 }));
   const mapVirtualHand = useVirtualHand3D();
 
   // ── 3D drag state ──────────────────────────────────────────────────────
@@ -222,11 +223,17 @@ function App() {
           const nextRawGesture = detectGesture(primaryHand ? primaryHand.landmarks : null);
           const stableGesture = stabilizerRef.current.update(nextRawGesture);
           const virtualHand = mapVirtualHand(result, primaryHand, sceneRef.current);
+          const smoothedXY = cursorSmootherRef.current.update(virtualHand.cursorScene);
+          const smoothedCursor = {
+            ...virtualHand.cursorScene,
+            x: smoothedXY.x,
+            y: smoothedXY.y,
+          };
 
           setHandDetected(result.detected);
           setRawGesture(nextRawGesture);
           setGesture(stableGesture);
-          setSceneCursor(virtualHand.cursorScene);
+          setSceneCursor(smoothedCursor);
 
           if (result.detected && nextRawGesture !== 'none') {
             setInteractionMode('gesture');

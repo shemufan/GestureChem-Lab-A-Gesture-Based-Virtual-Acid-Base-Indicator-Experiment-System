@@ -33,7 +33,7 @@ export const WASTE_SINK_WORLD = {
 };
 
 export const FACE_AREA_WORLD = {
-  position: [4.5, 0.15, 1],
+  position: [2.85, 0.15, 1.9],
   rotation: [0, 0, 0],
   scale: 1,
 };

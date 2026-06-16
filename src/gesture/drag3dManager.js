@@ -1,7 +1,7 @@
 import { STATIC_OBJECT_WORLD, DRAG_CONFIG } from '../scene/worldLayout';
 import { findWorldDropZone } from '../scene/worldDropZones';
 
-const RELEASE_GRACE_MS = 220;
+const RELEASE_GRACE_MS = 450;
 
 export function createDrag3DState() {
   return {
