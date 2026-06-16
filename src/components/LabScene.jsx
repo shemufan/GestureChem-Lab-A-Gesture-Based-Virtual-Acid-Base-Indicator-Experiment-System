@@ -381,6 +381,7 @@ const LabScene = forwardRef(({
           cursor={sceneCursor}
           sceneSize={sceneSize}
           hitboxesRef={hitboxesRef}
+          lockedObjectId={d.lockedObjectId || d.draggingObjectId}
           onPointer3D={onPointer3D}
         />
 

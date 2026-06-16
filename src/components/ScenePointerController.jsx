@@ -7,6 +7,7 @@ export default function ScenePointerController({
   cursor,
   sceneSize,
   hitboxesRef,
+  lockedObjectId,
   onPointer3D,
 }) {
   const { camera } = useThree();
@@ -29,14 +30,23 @@ export default function ScenePointerController({
 
     raycaster.setFromCamera(ndc, camera);
 
-    const currentHitboxes = hitboxesRef.current;
-    const hitboxObjects = currentHitboxes instanceof Map
-      ? Array.from(currentHitboxes.values())
-      : currentHitboxes || [];
+    let hoveredObjectId = null;
 
-    const hits = raycaster.intersectObjects(hitboxObjects, true);
-    const draggableHit = hits.find((hit) => hit.object?.userData?.draggable);
-    const hoveredObjectId = draggableHit?.object?.userData?.objectId || null;
+    if (lockedObjectId) {
+      // Locked — skip raycaster, force the locked object.
+      // The drag3dManager is the final authority; this just avoids
+      // unnecessary raycaster traversal.
+      hoveredObjectId = lockedObjectId;
+    } else {
+      const currentHitboxes = hitboxesRef.current;
+      const hitboxObjects = currentHitboxes instanceof Map
+        ? Array.from(currentHitboxes.values())
+        : currentHitboxes || [];
+
+      const hits = raycaster.intersectObjects(hitboxObjects, true);
+      const draggableHit = hits.find((hit) => hit.object?.userData?.draggable);
+      hoveredObjectId = draggableHit?.object?.userData?.objectId || null;
+    }
 
     const planeHit = raycaster.ray.intersectPlane(dragPlane, intersection);
     const dragPoint = planeHit
@@ -56,6 +66,7 @@ export default function ScenePointerController({
     dragPlane,
     intersection,
     hitboxesRef,
+    lockedObjectId,
     onPointer3D,
   ]);
 

@@ -87,11 +87,11 @@ function App() {
   }, []);
 
   // ── 3D drag apply ─────────────────────────────────────────────────────
-  const applyDrag3D = useCallback((gestureType) => {
+  const applyDrag3D = useCallback((gestureType, forcedHoveredObjectId = null) => {
     setDrag3dState((current) => {
       const next = updateDrag3D(current, {
         gesture: gestureType,
-        hoveredObjectId: pointer3DRef.current.hoveredObjectId,
+        hoveredObjectId: forcedHoveredObjectId || pointer3DRef.current.hoveredObjectId,
         dragPoint: pointer3DRef.current.dragPoint,
       });
 
@@ -160,7 +160,9 @@ function App() {
       if (!mouseDraggingRef.current && moved > 6) {
         mouseDraggingRef.current = true;
         suppressNextClickRef.current = true;
-        applyDrag3D('pinch');
+        // Lock to the object the user originally pressed, not whatever the
+        // raycaster is hovering over now.
+        applyDrag3D('pinch', pending.objectId);
       }
 
       if (mouseDraggingRef.current) {

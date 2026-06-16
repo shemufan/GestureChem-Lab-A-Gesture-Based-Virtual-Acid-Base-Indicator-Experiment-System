@@ -1,6 +1,8 @@
 import { STATIC_OBJECT_WORLD, DRAG_CONFIG } from '../scene/worldLayout';
 import { findWorldDropZone } from '../scene/worldDropZones';
 
+const RELEASE_GRACE_MS = 220;
+
 export function createDrag3DState() {
   return {
     objectWorldPositions: {
@@ -11,9 +13,11 @@ export function createDrag3DState() {
       beaker: [...STATIC_OBJECT_WORLD.beaker.position],
     },
     draggingObjectId: null,
+    lockedObjectId: null,
     hoveredObjectId: null,
     nearZoneId: null,
     dropEvent: null,
+    releaseStartedAt: null,
   };
 }
 
@@ -22,13 +26,30 @@ export function updateDrag3D(state, input) {
     gesture,
     hoveredObjectId,
     dragPoint,
+    now = Date.now(),
   } = input;
 
   const isPinching = gesture === 'pinch';
+  const activeObjectId = state.lockedObjectId || state.draggingObjectId;
 
-  // Already holding an object
-  if (state.draggingObjectId) {
-    if (isPinching && dragPoint) {
+  // ═══════════════════════════════════════════════════════════════
+  // 1. Locked state — already holding an object.
+  //    Ignore input.hoveredObjectId completely.
+  //    Only move or release the active object.
+  // ═══════════════════════════════════════════════════════════════
+  if (activeObjectId) {
+    if (isPinching) {
+      if (!dragPoint) {
+        return {
+          ...state,
+          draggingObjectId: activeObjectId,
+          lockedObjectId: activeObjectId,
+          hoveredObjectId: activeObjectId,
+          dropEvent: null,
+          releaseStartedAt: null,
+        };
+      }
+
       const nextPosition = [
         dragPoint[0],
         DRAG_CONFIG.heldObjectY,
@@ -42,47 +63,72 @@ export function updateDrag3D(state, input) {
         ...state,
         objectWorldPositions: {
           ...state.objectWorldPositions,
-          [state.draggingObjectId]: nextPosition,
+          [activeObjectId]: nextPosition,
         },
-        hoveredObjectId: state.draggingObjectId,
+        draggingObjectId: activeObjectId,
+        lockedObjectId: activeObjectId,
+        hoveredObjectId: activeObjectId,
         nearZoneId: normalizedNearZoneId,
         dropEvent: null,
+        releaseStartedAt: null,
       };
     }
 
-    // Release — not pinching, so drop
-    const finalPosition = state.objectWorldPositions[state.draggingObjectId];
+    // Non-pinch while locked — do NOT release immediately.
+    // Wait through the release grace window to absorb gesture jitter.
+    const releaseStartedAt = state.releaseStartedAt ?? now;
+
+    if (now - releaseStartedAt < RELEASE_GRACE_MS) {
+      return {
+        ...state,
+        draggingObjectId: activeObjectId,
+        lockedObjectId: activeObjectId,
+        hoveredObjectId: activeObjectId,
+        dropEvent: null,
+        releaseStartedAt,
+      };
+    }
+
+    // Grace period exhausted — confirm release.
+    const finalPosition = state.objectWorldPositions[activeObjectId];
     const targetZone = findWorldDropZone(finalPosition);
 
     return {
       ...state,
       draggingObjectId: null,
+      lockedObjectId: null,
       hoveredObjectId: null,
       nearZoneId: null,
+      releaseStartedAt: null,
       dropEvent: {
-        objectId: state.draggingObjectId,
+        objectId: activeObjectId,
         targetZone,
       },
     };
   }
 
-  // Not holding — pinch starts grab on hovered object
+  // ═══════════════════════════════════════════════════════════════
+  // 2. Idle state — only now can a new object be grabbed.
+  // ═══════════════════════════════════════════════════════════════
   if (isPinching && hoveredObjectId) {
     return {
       ...state,
       draggingObjectId: hoveredObjectId,
+      lockedObjectId: hoveredObjectId,
       hoveredObjectId,
       nearZoneId: null,
       dropEvent: null,
+      releaseStartedAt: null,
     };
   }
 
-  // Not holding, not pinching — just hover
+  // 3. Idle hover state.
   return {
     ...state,
     hoveredObjectId,
     nearZoneId: null,
     dropEvent: null,
+    releaseStartedAt: null,
   };
 }
 
