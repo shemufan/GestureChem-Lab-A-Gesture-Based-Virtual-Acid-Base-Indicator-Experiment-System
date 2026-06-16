@@ -4,6 +4,7 @@ import CameraView from './components/CameraView';
 import LabScene from './components/LabScene';
 import ResultPanel from './components/ResultPanel';
 import SafetyPanel from './components/SafetyPanel';
+import StepPanel from './components/StepPanel';
 import VirtualExperimentHand from './components/VirtualExperimentHand';
 import { getGestureLabel } from './constants/labConfig.js';
 import { EXPERIMENT_STEPS, INITIAL_STATE } from './experiment/experimentSteps';
@@ -18,6 +19,7 @@ function App() {
   const pendingMouseDragRef = useRef(null);
   const mouseDraggingRef = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const lastSuccessTimeRef = useRef(0);
   const stabilizerRef = useRef(createGestureStabilizer({
     enterFrames: { pinch: 3, open: 2 },
     releaseFrames: 2,
@@ -75,14 +77,34 @@ function App() {
 
   // ── Drop handler ───────────────────────────────────────────────────────
   const onObjectDrop = useCallback((objectId, targetZone) => {
-    setState((current) => {
-      if (current.isCompleted) return current;
-      const nextState = processAction(current, { objectId, zoneId: targetZone });
-      if (nextState.error) setShowSafety(true);
-      return nextState;
-    });
+    const now = Date.now();
+    
+    // 💡 1. 逻辑锁：仅限制逻辑判定 (setState)
+    const canProcessLogic = (now - lastSuccessTimeRef.current >= 1200);
 
-    // Reset dropped object back to its resting position
+    if (canProcessLogic && objectId && objectId !== 'none' && objectId !== 'hand') {
+      setState((current) => {
+        if (current.isCompleted) return current;
+        
+        const nextState = processAction(current, { objectId, zoneId: targetZone });
+        
+        if (nextState.error) {
+          setShowSafety(true);
+        } else {
+          // 成功完成
+          if (nextState.currentStepIndex !== current.currentStepIndex || nextState.isCompleted) {
+            lastSuccessTimeRef.current = now; 
+            setShowSafety(false); 
+          }
+        }
+        return nextState;
+      });
+    } else if (!canProcessLogic) {
+      console.log("逻辑冷却中，仅执行物理归位");
+    }
+
+    // 💡 2. 物理重置：必须放在判断外面！
+    // 无论逻辑是否触发，只要松手了，试管必须回到试管架上
     setDrag3dState((current) => resetDroppedObjectIfNeeded(current, objectId));
   }, []);
 
@@ -266,12 +288,12 @@ function App() {
         />
       )}
 
-      {!state.isCompleted && currentStep && (
-        <div style={uiStyles.stepPanel}>
-          <div style={uiStyles.stepEyebrow}>当前目标</div>
-          <div style={uiStyles.stepText}>{currentStep.instruction}</div>
-        </div>
-      )}
+      {/* 使用封装好的 StepPanel 组件 */}
+      <StepPanel 
+        steps={EXPERIMENT_STEPS} 
+        currentStepIndex={state.currentStepIndex} 
+        isCompleted={state.isCompleted} 
+      />
 
       {state.isCompleted && !showResultDelay && (
         <div style={uiStyles.successToast}>滴定与废液处理已完成！请观察最终记录...</div>
@@ -317,7 +339,7 @@ const uiStyles = {
     overflow: 'hidden',
     background: '#fff',
   },
-  stepPanel: {
+  /*stepPanel: {
     position: 'absolute',
     top: '30px',
     left: '50%',
@@ -340,7 +362,7 @@ const uiStyles = {
     fontSize: '20px',
     fontWeight: 'bold',
     color: '#2c3e50',
-  },
+  },*/
   successToast: {
     position: 'absolute',
     bottom: '10%',

@@ -18,6 +18,9 @@ export const processAction = (state, action) => {
   const { currentStepIndex, hasGoggles, score, logs, phValue, hasIndicator } = state;
   const currentStep = EXPERIMENT_STEPS[currentStepIndex];
 
+  // --- 过滤无效或空动作 ---
+  if (!objectId || objectId === 'none') return state;
+
   const safetyStatus = SAFETY_RULES.validateAction(state, objectId);
   if (!safetyStatus.isSafe) {
     return {
@@ -41,6 +44,7 @@ export const processAction = (state, action) => {
     };
   }
 
+  // --- 正常的成功逻辑 ---
   const updatedIndicator = objectId === 'indicator' ? true : hasIndicator;
   const reaction = CHEMISTRY_RULES.calculateReaction(objectId, phValue || 7, updatedIndicator);
   const isLastStep = currentStepIndex === EXPERIMENT_STEPS.length - 1;

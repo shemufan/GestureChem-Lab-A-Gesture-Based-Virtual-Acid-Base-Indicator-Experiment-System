@@ -1,106 +1,42 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 
-/**
- * SafetyPanel 组件：用于显示安全警告和操作错误
- * @param {string} message - 警告的具体内容
- * @param {boolean} visible - 是否显示
- * @param {function} onClose - 关闭弹窗的回调函数
- */
 const SafetyPanel = ({ message, visible, onClose }) => {
-  if (!visible) return null;
+  // 3秒后自动消失，提升用户体验
+  useEffect(() => {
+    if (visible && message) {
+      const timer = setTimeout(onClose, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [visible, message, onClose]);
+
+  if (!visible || !message) return null;
 
   return (
-    <div style={styles.overlay}>
-      <div style={styles.card}>
-        {/* 顶部警告图标 */}
-        <div style={styles.iconContainer}>
-          <span style={styles.icon}>⚠️</span>
-        </div>
-
-        <h2 style={styles.title}>实验操作提示</h2>
-        
-        <div style={styles.messageBox}>
-          <p style={styles.messageText}>{message}</p>
-        </div>
-
-        <button 
-          onClick={onClose} 
-          style={styles.button}
-          onMouseEnter={(e) => (e.target.style.backgroundColor = '#c0392b')}
-          onMouseLeave={(e) => (e.target.style.backgroundColor = '#e74c3c')}
-        >
-          我已了解，继续实验
-        </button>
+    <div style={styles.container}>
+      <div style={styles.toast}>
+        <span style={{ marginRight: '10px' }}>⚠️</span>
+        <span style={styles.text}>{message}</span>
+        <button onClick={onClose} style={styles.closeBtn}>×</button>
       </div>
-
-      {/* 内联动画样式 */}
-      <style>{`
-        @keyframes fadeInScale {
-          from { opacity: 0; transform: scale(0.9); }
-          to { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
     </div>
   );
 };
 
 const styles = {
-  overlay: {
-    position: 'fixed',
-    top: 0, left: 0,
-    width: '100vw', height: '100vh',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)', // 半透明遮罩
-    backdropFilter: 'blur(8px)', // 磨砂玻璃效果
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999, // 确保在最上层
+  container: {
+    position: 'fixed', top: '85px', left: '50%', transform: 'translateX(-50%)',
+    zIndex: 2000, width: 'auto', pointerEvents: 'none' // 允许穿透点击 3D 场景
   },
-  card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    padding: '40px',
-    borderRadius: '24px',
-    maxWidth: '400px',
-    width: '90%',
-    textAlign: 'center',
-    boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)',
-    border: '2px solid #e74c3c',
-    animation: 'fadeInScale 0.3s ease-out forwards',
+  toast: {
+    background: 'rgba(231, 76, 60, 0.9)', color: 'white',
+    padding: '12px 25px', borderRadius: '12px', display: 'flex', alignItems: 'center',
+    boxShadow: '0 8px 20px rgba(0,0,0,0.2)', backdropFilter: 'blur(5px)',
+    pointerEvents: 'auto', animation: 'slideDown 0.3s ease-out'
   },
-  iconContainer: {
-    fontSize: '50px',
-    marginBottom: '15px',
-  },
-  title: {
-    color: '#e74c3c',
-    margin: '0 0 10px 0',
-    fontSize: '22px',
-    fontWeight: 'bold',
-  },
-  messageBox: {
-    margin: '20px 0 30px 0',
-    minHeight: '60px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  messageText: {
-    color: '#2c3e50',
-    fontSize: '16px',
-    lineHeight: '1.6',
-    margin: 0,
-  },
-  button: {
-    backgroundColor: '#e74c3c',
-    color: 'white',
-    border: 'none',
-    padding: '12px 30px',
-    borderRadius: '12px',
-    fontSize: '16px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    width: '100%',
+  text: { fontSize: '15px', fontWeight: '500' },
+  closeBtn: {
+    background: 'none', border: 'none', color: 'white', marginLeft: '15px',
+    cursor: 'pointer', fontSize: '20px'
   }
 };
 
